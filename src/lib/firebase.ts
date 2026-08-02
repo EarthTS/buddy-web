@@ -8,14 +8,41 @@ export const FIREBASE_PROJECT_ID =
 
 const HINTS_COLLECTION = "hints";
 
-function getServiceAccount() {
+type ServiceAccount = {
+  project_id: string;
+  client_email: string;
+  private_key: string;
+};
+
+function parseServiceAccountJson(raw: string): ServiceAccount {
+  let value = raw.trim();
+
+  // Handle double-encoded JSON pasted into Vercel
+  if (value.startsWith('"') && value.endsWith('"')) {
+    value = JSON.parse(value) as string;
+  }
+
+  const parsed = JSON.parse(value) as ServiceAccount;
+
+  if (!parsed.client_email || !parsed.private_key) {
+    throw new Error("Invalid service account JSON");
+  }
+
+  return {
+    project_id: parsed.project_id ?? FIREBASE_PROJECT_ID,
+    client_email: parsed.client_email,
+    private_key: parsed.private_key.replace(/\\n/g, "\n"),
+  };
+}
+
+function getServiceAccount(): ServiceAccount | null {
   const json = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
   if (json) {
-    return JSON.parse(json) as {
-      project_id: string;
-      client_email: string;
-      private_key: string;
-    };
+    try {
+      return parseServiceAccountJson(json);
+    } catch {
+      return null;
+    }
   }
 
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;

@@ -1,3 +1,4 @@
+import { Redis } from "@upstash/redis";
 import { head, put } from "@vercel/blob";
 import { promises as fs } from "fs";
 import path from "path";
@@ -11,10 +12,33 @@ export type Hint = {
 };
 
 const BLOB_PATHNAME = "buddy/hints.json";
+const REDIS_KEY = "buddy:hints";
 const HINTS_FILE = path.join(process.cwd(), "data", "hints.json");
 
-function useBlobStorage() {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+type StorageBackend = "blob" | "redis" | "file";
+
+function getStorageBackend(): StorageBackend | null {
+  if (process.env.BLOB_READ_WRITE_TOKEN) return "blob";
+
+  const redisUrl =
+    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+  const redisToken =
+    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+  if (redisUrl && redisToken) return "redis";
+
+  if (!process.env.VERCEL) return "file";
+
+  return null;
+}
+
+function getRedis(): Redis | null {
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+
+  if (!url || !token) return null;
+  return new Redis({ url, token });
 }
 
 async function ensureDataFile() {
@@ -63,35 +87,58 @@ async function saveHintsToBlob(hints: Hint[]) {
   });
 }
 
-function missingStorageError() {
+async function loadHintsFromRedis(): Promise<Hint[]> {
+  const redis = getRedis();
+  if (!redis) return [];
+  const hints = await redis.get<Hint[]>(REDIS_KEY);
+  return hints ?? [];
+}
+
+async function saveHintsToRedis(hints: Hint[]) {
+  const redis = getRedis();
+  if (!redis) throw new Error("Redis not configured");
+  await redis.set(REDIS_KEY, hints);
+}
+
+function missingStorageError(): never {
   throw new Error(
-    "Missing BLOB_READ_WRITE_TOKEN. Add Vercel Blob storage to the project.",
+    "ยังไม่ได้ตั้งค่า Storage บน Vercel — ไปที่ Storage → Create → Blob หรือ Upstash Redis → Connect to Project → Redeploy",
   );
 }
 
 async function loadHints(): Promise<Hint[]> {
-  if (useBlobStorage()) {
-    return loadHintsFromBlob();
-  }
+  const backend = getStorageBackend();
+  if (!backend) missingStorageError();
 
-  if (process.env.VERCEL) {
-    missingStorageError();
+  switch (backend) {
+    case "blob":
+      return loadHintsFromBlob();
+    case "redis":
+      return loadHintsFromRedis();
+    case "file":
+      return loadHintsFromFile();
+    default:
+      missingStorageError();
   }
-
-  return loadHintsFromFile();
 }
 
 async function saveHints(hints: Hint[]) {
-  if (useBlobStorage()) {
-    await saveHintsToBlob(hints);
-    return;
-  }
+  const backend = getStorageBackend();
+  if (!backend) missingStorageError();
 
-  if (process.env.VERCEL) {
-    missingStorageError();
+  switch (backend) {
+    case "blob":
+      await saveHintsToBlob(hints);
+      return;
+    case "redis":
+      await saveHintsToRedis(hints);
+      return;
+    case "file":
+      await saveHintsToFile(hints);
+      return;
+    default:
+      missingStorageError();
   }
-
-  await saveHintsToFile(hints);
 }
 
 export async function getHintsForParticipant(
@@ -129,6 +176,6 @@ export async function resetHints(): Promise<void> {
   await saveHints([]);
 }
 
-export function isUsingBlobStorage() {
-  return useBlobStorage();
+export function getActiveStorageBackend() {
+  return getStorageBackend();
 }

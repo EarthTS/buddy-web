@@ -48,4 +48,22 @@ if (process.env.BLOB_READ_WRITE_TOKEN) {
   console.log("Blob hints reset.");
 }
 
+const redisUrl =
+  process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+const redisToken =
+  process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+const REDIS_KEY = "buddy:hints";
+
+if (redisUrl && redisToken) {
+  const res = await fetch(
+    `${redisUrl}/set/${REDIS_KEY}/${encodeURIComponent("[]")}`,
+    { headers: { Authorization: `Bearer ${redisToken}` } },
+  );
+  if (!res.ok) {
+    console.warn("Could not reset Redis hints:", await res.text());
+  } else {
+    console.log("Redis hints reset.");
+  }
+}
+
 console.log(`Reshuffled ${Object.keys(pairings).length / 2} pairs. Hints reset.`);

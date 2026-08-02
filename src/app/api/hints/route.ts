@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { addHint, getHintsForParticipant } from "@/lib/hints-store";
 import { getBuddyId, getParticipant } from "@/lib/participants";
 
+export const maxDuration = 15;
+
 function storageErrorResponse(error: unknown) {
   console.error("Hints storage error:", error);
   return NextResponse.json(

@@ -1,14 +1,7 @@
-import {
-  addDoc,
-  deleteDoc,
-  doc,
-  getDocs,
-  query,
-  where,
-} from "firebase/firestore";
 import { promises as fs } from "fs";
 import path from "path";
-import { getHintsCollection, isFirebaseConfigured } from "@/lib/firebase";
+import { isFirebaseConfigured } from "@/lib/firebase";
+import { createHintDocument, queryHintsByRecipient } from "@/lib/firestore-rest";
 
 export type Hint = {
   id: string;
@@ -73,16 +66,11 @@ export async function getHintsForParticipant(
       );
   }
 
-  const snapshot = await getDocs(
-    query(getHintsCollection(), where("toId", "==", participantId)),
+  const hints = await queryHintsByRecipient(participantId);
+  return hints.sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
-
-  return snapshot.docs
-    .map((docSnap) => docSnap.data() as Hint)
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
 }
 
 export async function addHint(
@@ -107,7 +95,7 @@ export async function addHint(
     return hint;
   }
 
-  await addDoc(getHintsCollection(), hint);
+  await createHintDocument(hint);
   return hint;
 }
 
@@ -116,11 +104,7 @@ export async function resetHints(): Promise<void> {
 
   if (backend === "file") {
     await saveHintsToFile([]);
-    return;
   }
-
-  const snapshot = await getDocs(getHintsCollection());
-  await Promise.all(snapshot.docs.map((docSnap) => deleteDoc(docSnap.ref)));
 }
 
 export function getActiveStorageBackend() {

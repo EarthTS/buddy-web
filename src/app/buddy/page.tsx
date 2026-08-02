@@ -25,10 +25,20 @@ export default function BuddyPage() {
   const hasBuddy = Boolean(buddy);
 
   const loadHints = useCallback(async (id: string) => {
-    const res = await fetch(`/api/hints?participantId=${encodeURIComponent(id)}`);
-    if (!res.ok) return;
-    const data = (await res.json()) as { hints: HintItem[] };
-    setHints(data.hints);
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12_000);
+      const res = await fetch(
+        `/api/hints?participantId=${encodeURIComponent(id)}`,
+        { signal: controller.signal },
+      );
+      clearTimeout(timeout);
+      if (!res.ok) return;
+      const data = (await res.json()) as { hints: HintItem[] };
+      setHints(data.hints);
+    } catch {
+      setMessage("โหลดคำใบ้ไม่สำเร็จ — ลองรีเฟรชอีกครั้ง");
+    }
   }, []);
 
   useEffect(() => {
@@ -49,11 +59,17 @@ export default function BuddyPage() {
     setMessage("");
 
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12_000);
+
       const res = await fetch("/api/hints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fromId: participantId, text: hintText }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeout);
 
       if (!res.ok) {
         const data = (await res.json()) as { error?: string };
@@ -63,6 +79,12 @@ export default function BuddyPage() {
 
       setHintText("");
       setMessage("ส่งคำใบ้ให้ Buddy แล้ว!");
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        setMessage("ส่งคำใบ้ช้าเกินไป — ตรวจสอบ Firebase/Firestore แล้วลองใหม่");
+      } else {
+        setMessage("ส่งคำใบ้ไม่สำเร็จ — ลองอีกครั้ง");
+      }
     } finally {
       setSubmitting(false);
     }

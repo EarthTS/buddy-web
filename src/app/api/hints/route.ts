@@ -9,7 +9,7 @@ function storageErrorResponse(error: unknown) {
       error:
         error instanceof Error
           ? error.message
-          : "Storage unavailable. Configure Vercel Blob or Redis on Vercel.",
+          : "Storage unavailable. Configure Firebase credentials on Vercel.",
     },
     { status: 503 },
   );

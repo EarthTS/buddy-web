@@ -1,7 +1,6 @@
-import { Redis } from "@upstash/redis";
-import { head, put } from "@vercel/blob";
 import { promises as fs } from "fs";
 import path from "path";
+import { getHintsCollection, isFirebaseConfigured } from "@/lib/firebase";
 
 export type Hint = {
   id: string;
@@ -11,34 +10,10 @@ export type Hint = {
   createdAt: string;
 };
 
-const BLOB_PATHNAME = "buddy/hints.json";
-const REDIS_KEY = "buddy:hints";
 const HINTS_FILE = path.join(process.cwd(), "data", "hints.json");
 
-type StorageBackend = "blob" | "redis" | "file";
-
-function getStorageBackend(): StorageBackend | null {
-  if (process.env.BLOB_READ_WRITE_TOKEN) return "blob";
-
-  const redisUrl =
-    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-  const redisToken =
-    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
-  if (redisUrl && redisToken) return "redis";
-
-  if (!process.env.VERCEL) return "file";
-
-  return null;
-}
-
-function getRedis(): Redis | null {
-  const url =
-    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-  const token =
-    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
-
-  if (!url || !token) return null;
-  return new Redis({ url, token });
+function useFirebase() {
+  return isFirebaseConfigured();
 }
 
 async function ensureDataFile() {
@@ -63,90 +38,39 @@ async function saveHintsToFile(hints: Hint[]) {
   await fs.writeFile(HINTS_FILE, JSON.stringify(hints, null, 2), "utf-8");
 }
 
-async function loadHintsFromBlob(): Promise<Hint[]> {
-  try {
-    const blob = await head(BLOB_PATHNAME);
-    const res = await fetch(blob.url);
-
-    if (!res.ok) {
-      throw new Error("Failed to read hints blob");
-    }
-
-    return (await res.json()) as Hint[];
-  } catch {
-    return [];
-  }
-}
-
-async function saveHintsToBlob(hints: Hint[]) {
-  await put(BLOB_PATHNAME, JSON.stringify(hints), {
-    access: "public",
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: "application/json",
-  });
-}
-
-async function loadHintsFromRedis(): Promise<Hint[]> {
-  const redis = getRedis();
-  if (!redis) return [];
-  const hints = await redis.get<Hint[]>(REDIS_KEY);
-  return hints ?? [];
-}
-
-async function saveHintsToRedis(hints: Hint[]) {
-  const redis = getRedis();
-  if (!redis) throw new Error("Redis not configured");
-  await redis.set(REDIS_KEY, hints);
-}
-
 function missingStorageError(): never {
   throw new Error(
-    "ยังไม่ได้ตั้งค่า Storage บน Vercel — ไปที่ Storage → Create → Blob หรือ Upstash Redis → Connect to Project → Redeploy",
+    "ยังไม่ได้ตั้งค่า Firebase — เพิ่ม FIREBASE_SERVICE_ACCOUNT_KEY ใน Vercel Environment Variables แล้ว Redeploy",
   );
 }
 
-async function loadHints(): Promise<Hint[]> {
-  const backend = getStorageBackend();
-  if (!backend) missingStorageError();
-
-  switch (backend) {
-    case "blob":
-      return loadHintsFromBlob();
-    case "redis":
-      return loadHintsFromRedis();
-    case "file":
-      return loadHintsFromFile();
-    default:
-      missingStorageError();
-  }
-}
-
-async function saveHints(hints: Hint[]) {
-  const backend = getStorageBackend();
-  if (!backend) missingStorageError();
-
-  switch (backend) {
-    case "blob":
-      await saveHintsToBlob(hints);
-      return;
-    case "redis":
-      await saveHintsToRedis(hints);
-      return;
-    case "file":
-      await saveHintsToFile(hints);
-      return;
-    default:
-      missingStorageError();
-  }
+function requireBackend() {
+  if (useFirebase()) return "firebase" as const;
+  if (!process.env.VERCEL) return "file" as const;
+  missingStorageError();
 }
 
 export async function getHintsForParticipant(
   participantId: string,
 ): Promise<Hint[]> {
-  const hints = await loadHints();
-  return hints
-    .filter((hint) => hint.toId === participantId)
+  const backend = requireBackend();
+
+  if (backend === "file") {
+    const hints = await loadHintsFromFile();
+    return hints
+      .filter((hint) => hint.toId === participantId)
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+  }
+
+  const snapshot = await getHintsCollection()
+    .where("toId", "==", participantId)
+    .get();
+
+  return snapshot.docs
+    .map((doc) => doc.data() as Hint)
     .sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
@@ -158,7 +82,6 @@ export async function addHint(
   toId: string,
   text: string,
 ): Promise<Hint> {
-  const hints = await loadHints();
   const hint: Hint = {
     id: crypto.randomUUID(),
     fromId,
@@ -167,15 +90,35 @@ export async function addHint(
     createdAt: new Date().toISOString(),
   };
 
-  hints.push(hint);
-  await saveHints(hints);
+  const backend = requireBackend();
+
+  if (backend === "file") {
+    const hints = await loadHintsFromFile();
+    hints.push(hint);
+    await saveHintsToFile(hints);
+    return hint;
+  }
+
+  await getHintsCollection().doc(hint.id).set(hint);
   return hint;
 }
 
 export async function resetHints(): Promise<void> {
-  await saveHints([]);
+  const backend = requireBackend();
+
+  if (backend === "file") {
+    await saveHintsToFile([]);
+    return;
+  }
+
+  const snapshot = await getHintsCollection().get();
+  const batch = getHintsCollection().firestore.batch();
+  snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+  await batch.commit();
 }
 
 export function getActiveStorageBackend() {
-  return getStorageBackend();
+  if (useFirebase()) return "firebase";
+  if (!process.env.VERCEL) return "file";
+  return null;
 }

@@ -37,20 +37,15 @@ content = content.replace(
 writeFileSync(participantsPath, content, "utf-8");
 writeFileSync(path.join(root, "data", "hints.json"), "[]\n", "utf-8");
 
-const redisUrl =
-  process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-const redisToken =
-  process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
-
-if (redisUrl && redisToken) {
-  const res = await fetch(`${redisUrl}/set/buddy:hints/${encodeURIComponent("[]")}`, {
-    headers: { Authorization: `Bearer ${redisToken}` },
+if (process.env.BLOB_READ_WRITE_TOKEN) {
+  const { put } = await import("@vercel/blob");
+  await put("buddy/hints.json", "[]", {
+    access: "public",
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: "application/json",
   });
-  if (!res.ok) {
-    console.warn("Could not reset Redis hints:", await res.text());
-  } else {
-    console.log("Redis hints reset.");
-  }
+  console.log("Blob hints reset.");
 }
 
 console.log(`Reshuffled ${Object.keys(pairings).length / 2} pairs. Hints reset.`);

@@ -1,4 +1,4 @@
-import { Redis } from "@upstash/redis";
+import { head, put } from "@vercel/blob";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -10,21 +10,11 @@ export type Hint = {
   createdAt: string;
 };
 
-const HINTS_KEY = "buddy:hints";
+const BLOB_PATHNAME = "buddy/hints.json";
 const HINTS_FILE = path.join(process.cwd(), "data", "hints.json");
 
-function getRedis(): Redis | null {
-  const url =
-    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-  const token =
-    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
-
-  if (!url || !token) return null;
-  return new Redis({ url, token });
-}
-
-function useRedis() {
-  return getRedis() !== null;
+function useBlobStorage() {
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 }
 
 async function ensureDataFile() {
@@ -49,33 +39,56 @@ async function saveHintsToFile(hints: Hint[]) {
   await fs.writeFile(HINTS_FILE, JSON.stringify(hints, null, 2), "utf-8");
 }
 
+async function loadHintsFromBlob(): Promise<Hint[]> {
+  try {
+    const blob = await head(BLOB_PATHNAME);
+    const res = await fetch(blob.url);
+
+    if (!res.ok) {
+      throw new Error("Failed to read hints blob");
+    }
+
+    return (await res.json()) as Hint[];
+  } catch {
+    return [];
+  }
+}
+
+async function saveHintsToBlob(hints: Hint[]) {
+  await put(BLOB_PATHNAME, JSON.stringify(hints), {
+    access: "public",
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: "application/json",
+  });
+}
+
+function missingStorageError() {
+  throw new Error(
+    "Missing BLOB_READ_WRITE_TOKEN. Add Vercel Blob storage to the project.",
+  );
+}
+
 async function loadHints(): Promise<Hint[]> {
-  const redis = getRedis();
-  if (redis) {
-    const hints = await redis.get<Hint[]>(HINTS_KEY);
-    return hints ?? [];
+  if (useBlobStorage()) {
+    return loadHintsFromBlob();
   }
 
   if (process.env.VERCEL) {
-    throw new Error(
-      "Missing Redis env vars. Add Upstash Redis or Vercel KV to the project.",
-    );
+    missingStorageError();
   }
 
   return loadHintsFromFile();
 }
 
 async function saveHints(hints: Hint[]) {
-  const redis = getRedis();
-  if (redis) {
-    await redis.set(HINTS_KEY, hints);
+  if (useBlobStorage()) {
+    await saveHintsToBlob(hints);
     return;
   }
 
   if (process.env.VERCEL) {
-    throw new Error(
-      "Missing Redis env vars. Add Upstash Redis or Vercel KV to the project.",
-    );
+    missingStorageError();
   }
 
   await saveHintsToFile(hints);
@@ -116,6 +129,6 @@ export async function resetHints(): Promise<void> {
   await saveHints([]);
 }
 
-export function isUsingRedisStorage() {
-  return useRedis();
+export function isUsingBlobStorage() {
+  return useBlobStorage();
 }

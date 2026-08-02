@@ -9,7 +9,7 @@ function storageErrorResponse(error: unknown) {
       error:
         error instanceof Error
           ? error.message
-          : "Storage unavailable. Configure Redis on Vercel.",
+          : "Storage unavailable. Configure Vercel Blob on Vercel.",
     },
     { status: 503 },
   );

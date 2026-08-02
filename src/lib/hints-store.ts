@@ -1,3 +1,4 @@
+import { Redis } from "@upstash/redis";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -9,7 +10,22 @@ export type Hint = {
   createdAt: string;
 };
 
+const HINTS_KEY = "buddy:hints";
 const HINTS_FILE = path.join(process.cwd(), "data", "hints.json");
+
+function getRedis(): Redis | null {
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+
+  if (!url || !token) return null;
+  return new Redis({ url, token });
+}
+
+function useRedis() {
+  return getRedis() !== null;
+}
 
 async function ensureDataFile() {
   const dir = path.dirname(HINTS_FILE);
@@ -22,15 +38,47 @@ async function ensureDataFile() {
   }
 }
 
-async function loadHints(): Promise<Hint[]> {
+async function loadHintsFromFile(): Promise<Hint[]> {
   await ensureDataFile();
   const raw = await fs.readFile(HINTS_FILE, "utf-8");
   return JSON.parse(raw) as Hint[];
 }
 
-async function saveHints(hints: Hint[]) {
+async function saveHintsToFile(hints: Hint[]) {
   await ensureDataFile();
   await fs.writeFile(HINTS_FILE, JSON.stringify(hints, null, 2), "utf-8");
+}
+
+async function loadHints(): Promise<Hint[]> {
+  const redis = getRedis();
+  if (redis) {
+    const hints = await redis.get<Hint[]>(HINTS_KEY);
+    return hints ?? [];
+  }
+
+  if (process.env.VERCEL) {
+    throw new Error(
+      "Missing Redis env vars. Add Upstash Redis or Vercel KV to the project.",
+    );
+  }
+
+  return loadHintsFromFile();
+}
+
+async function saveHints(hints: Hint[]) {
+  const redis = getRedis();
+  if (redis) {
+    await redis.set(HINTS_KEY, hints);
+    return;
+  }
+
+  if (process.env.VERCEL) {
+    throw new Error(
+      "Missing Redis env vars. Add Upstash Redis or Vercel KV to the project.",
+    );
+  }
+
+  await saveHintsToFile(hints);
 }
 
 export async function getHintsForParticipant(
@@ -62,4 +110,12 @@ export async function addHint(
   hints.push(hint);
   await saveHints(hints);
   return hint;
+}
+
+export async function resetHints(): Promise<void> {
+  await saveHints([]);
+}
+
+export function isUsingRedisStorage() {
+  return useRedis();
 }

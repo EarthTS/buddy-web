@@ -1,11 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { getBuddy, getParticipant } from "@/lib/participants";
-
-const STORAGE_KEY = "buddy-participant-id";
+import { getStoredParticipantId } from "@/lib/session";
 
 type HintItem = {
   id: string;
@@ -34,7 +32,7 @@ export default function BuddyPage() {
   }, []);
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = getStoredParticipantId();
     if (!stored || !getParticipant(stored)) {
       router.replace("/");
       return;
@@ -70,11 +68,6 @@ export default function BuddyPage() {
     }
   }
 
-  function handleLogout() {
-    localStorage.removeItem(STORAGE_KEY);
-    router.push("/");
-  }
-
   if (loading || !participant) {
     return (
       <div className="flex min-h-full items-center justify-center bg-gradient-to-br from-violet-50 via-white to-fuchsia-50">
@@ -87,25 +80,16 @@ export default function BuddyPage() {
     <div className="min-h-full bg-gradient-to-br from-violet-50 via-white to-fuchsia-50">
       <main className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
         <header className="mb-8">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-violet-600">
-                สวัสดี, {participant.name}
-              </p>
-              <h1 className="mt-1 text-2xl font-bold text-zinc-900">
-                Buddy ของคุณ
-              </h1>
-              <p className="mt-1 text-sm text-zinc-500">
-                Buddy จะไม่เห็นชื่อของคุณในคำใบ้ที่คุณส่ง
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="shrink-0 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-600 transition hover:bg-zinc-50"
-            >
-              เปลี่ยนคน
-            </button>
+          <div>
+            <p className="text-sm font-medium text-violet-600">
+              สวัสดี, {participant.name}
+            </p>
+            <h1 className="mt-1 text-2xl font-bold text-zinc-900">
+              Buddy ของคุณ
+            </h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              Buddy จะไม่เห็นชื่อของคุณในคำใบ้ที่คุณส่ง
+            </p>
           </div>
 
           {hasBuddy ? (
@@ -200,11 +184,6 @@ export default function BuddyPage() {
           </section>
         )}
 
-        <p className="mt-8 text-center text-xs text-zinc-400">
-          <Link href="/" className="hover:text-violet-600">
-            กลับหน้าเลือกตัวตน
-          </Link>
-        </p>
       </main>
     </div>
   );

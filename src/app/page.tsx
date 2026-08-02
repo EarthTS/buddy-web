@@ -1,10 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
-import { ALL_PARTICIPANTS, GROUP_A, GROUP_B } from "@/lib/participants";
-
-const STORAGE_KEY = "buddy-participant-id";
+import { useEffect, useMemo, useState } from "react";
+import { ALL_PARTICIPANTS, getParticipant, GROUP_A, GROUP_B } from "@/lib/participants";
+import { getStoredParticipantId, setStoredParticipantId } from "@/lib/session";
 
 function ParticipantList({
   title,
@@ -50,6 +49,21 @@ export default function HomePage() {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState("");
   const [search, setSearch] = useState("");
+  const [checking, setChecking] = useState(true);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const selectedParticipant = selectedId
+    ? ALL_PARTICIPANTS.find((p) => p.id === selectedId)
+    : undefined;
+
+  useEffect(() => {
+    const stored = getStoredParticipantId();
+    if (stored && getParticipant(stored)) {
+      router.replace("/buddy");
+      return;
+    }
+    setChecking(false);
+  }, [router]);
 
   const filteredA = useMemo(
     () =>
@@ -69,8 +83,21 @@ export default function HomePage() {
 
   function handleContinue() {
     if (!selectedId) return;
-    localStorage.setItem(STORAGE_KEY, selectedId);
-    router.push("/buddy");
+    setShowConfirm(true);
+  }
+
+  function handleConfirm() {
+    if (!selectedId) return;
+    setStoredParticipantId(selectedId);
+    router.replace("/buddy");
+  }
+
+  if (checking) {
+    return (
+      <div className="flex min-h-full items-center justify-center bg-gradient-to-br from-violet-50 via-white to-fuchsia-50">
+        <p className="text-zinc-500">กำลังโหลด...</p>
+      </div>
+    );
   }
 
   return (
@@ -84,7 +111,7 @@ export default function HomePage() {
             Buddy Hint
           </h1>
           <p className="mt-2 text-zinc-600">
-            เลือกชื่อของคุณเพื่อเริ่มต้น — คนอื่นจะไม่เห็นว่าคุณเป็นใคร
+            เลือกชื่อของคุณ — เลือกได้ครั้งเดียวและเก็บไว้ในเครื่องนี้เท่านั้น
           </p>
         </header>
 
@@ -94,7 +121,7 @@ export default function HomePage() {
             placeholder="ค้นหาชื่อ..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+            className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-black shadow-sm outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
           />
         </div>
 
@@ -133,6 +160,50 @@ export default function HomePage() {
           </button>
         </footer>
       </main>
+
+      {showConfirm && selectedParticipant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-title"
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <h2
+              id="confirm-title"
+              className="text-lg font-semibold text-zinc-900"
+            >
+              ยืนยันตัวตนของคุณ
+            </h2>
+            <p className="mt-3 text-sm text-zinc-600">
+              คุณเลือกเป็น{" "}
+              <span className="font-semibold text-violet-700">
+                {selectedParticipant.name}
+              </span>
+            </p>
+            <p className="mt-2 text-sm text-amber-700">
+              เลือกได้ครั้งเดียวเท่านั้น และไม่สามารถเปลี่ยนได้ภายหลัง
+            </p>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowConfirm(false)}
+                className="flex-1 rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirm}
+                className="flex-1 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700"
+              >
+                ยืนยัน
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

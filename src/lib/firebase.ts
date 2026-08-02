@@ -41,7 +41,7 @@ function getServiceAccount(): ServiceAccount | null {
     try {
       return parseServiceAccountJson(json);
     } catch {
-      return null;
+      // fall through to individual env vars
     }
   }
 
@@ -57,6 +57,27 @@ function getServiceAccount(): ServiceAccount | null {
   }
 
   return null;
+}
+
+export function getFirebaseDiagnostics() {
+  const json = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  let serviceAccountKeyValid = false;
+
+  if (json) {
+    try {
+      parseServiceAccountJson(json);
+      serviceAccountKeyValid = true;
+    } catch {
+      serviceAccountKeyValid = false;
+    }
+  }
+
+  return {
+    hasServiceAccountKey: Boolean(json),
+    serviceAccountKeyValid,
+    hasClientEmail: Boolean(process.env.FIREBASE_CLIENT_EMAIL),
+    hasPrivateKey: Boolean(process.env.FIREBASE_PRIVATE_KEY),
+  };
 }
 
 export function isFirebaseConfigured() {

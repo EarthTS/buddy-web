@@ -11,7 +11,7 @@ function storageErrorResponse(error: unknown) {
       error:
         error instanceof Error
           ? error.message
-          : "Storage unavailable. Configure Firebase API key and App ID on Vercel.",
+          : "Storage unavailable. Add FIREBASE_SERVICE_ACCOUNT_KEY on Vercel.",
     },
     { status: 503 },
   );

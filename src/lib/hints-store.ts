@@ -1,7 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
-import { isFirebaseConfigured } from "@/lib/firebase";
-import { createHintDocument, queryHintsByRecipient } from "@/lib/firestore-rest";
+import { getHintsCollection, isFirebaseConfigured } from "@/lib/firebase";
 
 export type Hint = {
   id: string;
@@ -41,7 +40,7 @@ async function saveHintsToFile(hints: Hint[]) {
 
 function missingStorageError(): never {
   throw new Error(
-    "ยังไม่ได้ตั้งค่า Firebase — เพิ่ม NEXT_PUBLIC_FIREBASE_API_KEY และ NEXT_PUBLIC_FIREBASE_APP_ID ใน Vercel แล้ว Redeploy",
+    "ยังไม่ได้ตั้งค่า Firebase — เพิ่ม FIREBASE_SERVICE_ACCOUNT_KEY ใน Vercel Environment Variables แล้ว Redeploy",
   );
 }
 
@@ -66,11 +65,16 @@ export async function getHintsForParticipant(
       );
   }
 
-  const hints = await queryHintsByRecipient(participantId);
-  return hints.sort(
-    (a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
+  const snapshot = await getHintsCollection()
+    .where("toId", "==", participantId)
+    .get();
+
+  return snapshot.docs
+    .map((docSnap) => docSnap.data() as Hint)
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
 }
 
 export async function addHint(
@@ -95,7 +99,7 @@ export async function addHint(
     return hint;
   }
 
-  await createHintDocument(hint);
+  await getHintsCollection().doc(hint.id).set(hint);
   return hint;
 }
 
@@ -104,7 +108,13 @@ export async function resetHints(): Promise<void> {
 
   if (backend === "file") {
     await saveHintsToFile([]);
+    return;
   }
+
+  const snapshot = await getHintsCollection().get();
+  const batch = getHintsCollection().firestore.batch();
+  snapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
+  await batch.commit();
 }
 
 export function getActiveStorageBackend() {

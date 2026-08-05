@@ -15,6 +15,7 @@ export default function BuddyPage() {
   const router = useRouter();
   const [participantId, setParticipantId] = useState<string | null>(null);
   const [hints, setHints] = useState<HintItem[]>([]);
+  const [sentHints, setSentHints] = useState<HintItem[]>([]);
   const [hintText, setHintText] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -28,14 +29,24 @@ export default function BuddyPage() {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 12_000);
-      const res = await fetch(
-        `/api/hints?participantId=${encodeURIComponent(id)}`,
-        { signal: controller.signal },
-      );
+      const [receivedRes, sentRes] = await Promise.all([
+        fetch(`/api/hints?participantId=${encodeURIComponent(id)}`, {
+          signal: controller.signal,
+        }),
+        fetch(
+          `/api/hints?participantId=${encodeURIComponent(id)}&direction=sent`,
+          { signal: controller.signal },
+        ),
+      ]);
       clearTimeout(timeout);
-      if (!res.ok) return;
-      const data = (await res.json()) as { hints: HintItem[] };
-      setHints(data.hints);
+      if (receivedRes.ok) {
+        const data = (await receivedRes.json()) as { hints: HintItem[] };
+        setHints(data.hints);
+      }
+      if (sentRes.ok) {
+        const data = (await sentRes.json()) as { hints: HintItem[] };
+        setSentHints(data.hints);
+      }
     } catch {
       setMessage("โหลดคำใบ้ไม่สำเร็จ — ลองรีเฟรชอีกครั้ง");
     }
@@ -79,6 +90,7 @@ export default function BuddyPage() {
 
       setHintText("");
       setMessage("ส่งคำใบ้ให้ Buddy แล้ว!");
+      await loadHints(participantId);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         setMessage("ส่งคำใบ้ช้าเกินไป — ตรวจสอบ Firebase/Firestore แล้วลองใหม่");
@@ -166,7 +178,7 @@ export default function BuddyPage() {
         </section>
 
         {hasBuddy && (
-          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+          <section className="mb-8 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <h2 className="mb-1 text-lg font-semibold text-zinc-900">
               ส่งคำใบ้ให้ Buddy
             </h2>
@@ -203,6 +215,40 @@ export default function BuddyPage() {
                 </p>
               )}
             </form>
+          </section>
+        )}
+
+        {hasBuddy && (
+          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <h2 className="mb-1 text-lg font-semibold text-zinc-900">
+              คำใบ้ที่ส่งไปแล้ว
+            </h2>
+            <p className="mb-4 text-sm text-zinc-500">
+              คำใบ้ที่คุณใบ้ให้ Buddy แล้ว — เฉพาะคุณเท่านั้นที่เห็น
+            </p>
+
+            {sentHints.length === 0 ? (
+              <p className="rounded-xl bg-zinc-50 px-4 py-8 text-center text-sm text-zinc-500">
+                ยังไม่เคยส่งคำใบ้
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {sentHints.map((hint) => (
+                  <li
+                    key={hint.id}
+                    className="rounded-xl border border-fuchsia-100 bg-fuchsia-50/50 px-4 py-3"
+                  >
+                    <p className="text-zinc-800">{hint.text}</p>
+                    <time
+                      dateTime={hint.createdAt}
+                      className="mt-2 block text-xs text-zinc-400"
+                    >
+                      {new Date(hint.createdAt).toLocaleString("th-TH")}
+                    </time>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
         )}
 

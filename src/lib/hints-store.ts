@@ -50,6 +50,13 @@ function requireBackend() {
   missingStorageError();
 }
 
+function sortHintsNewestFirst(hints: Hint[]): Hint[] {
+  return hints.sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+}
+
 export async function getHintsForParticipant(
   participantId: string,
 ): Promise<Hint[]> {
@@ -57,24 +64,39 @@ export async function getHintsForParticipant(
 
   if (backend === "file") {
     const hints = await loadHintsFromFile();
-    return hints
-      .filter((hint) => hint.toId === participantId)
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
+    return sortHintsNewestFirst(
+      hints.filter((hint) => hint.toId === participantId),
+    );
   }
 
   const snapshot = await getHintsCollection()
     .where("toId", "==", participantId)
     .get();
 
-  return snapshot.docs
-    .map((docSnap) => docSnap.data() as Hint)
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  return sortHintsNewestFirst(
+    snapshot.docs.map((docSnap) => docSnap.data() as Hint),
+  );
+}
+
+export async function getHintsSentByParticipant(
+  participantId: string,
+): Promise<Hint[]> {
+  const backend = requireBackend();
+
+  if (backend === "file") {
+    const hints = await loadHintsFromFile();
+    return sortHintsNewestFirst(
+      hints.filter((hint) => hint.fromId === participantId),
     );
+  }
+
+  const snapshot = await getHintsCollection()
+    .where("fromId", "==", participantId)
+    .get();
+
+  return sortHintsNewestFirst(
+    snapshot.docs.map((docSnap) => docSnap.data() as Hint),
+  );
 }
 
 export async function addHint(

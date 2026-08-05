@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addHint, getHintsForParticipant } from "@/lib/hints-store";
+import {
+  addHint,
+  getHintsForParticipant,
+  getHintsSentByParticipant,
+} from "@/lib/hints-store";
 import { getBuddyId, getParticipant } from "@/lib/participants";
 
 export const maxDuration = 15;
@@ -19,13 +23,21 @@ function storageErrorResponse(error: unknown) {
 
 export async function GET(request: NextRequest) {
   const participantId = request.nextUrl.searchParams.get("participantId");
+  const direction = request.nextUrl.searchParams.get("direction") ?? "received";
 
   if (!participantId || !getParticipant(participantId)) {
     return NextResponse.json({ error: "Invalid participant" }, { status: 400 });
   }
 
+  if (direction !== "received" && direction !== "sent") {
+    return NextResponse.json({ error: "Invalid direction" }, { status: 400 });
+  }
+
   try {
-    const hints = await getHintsForParticipant(participantId);
+    const hints =
+      direction === "sent"
+        ? await getHintsSentByParticipant(participantId)
+        : await getHintsForParticipant(participantId);
     const sanitized = hints.map(({ id, text, createdAt }) => ({
       id,
       text,
